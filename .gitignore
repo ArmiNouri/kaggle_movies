@@ -1,2 +1,7 @@
 project/*
 target/*
+.DS_Store
+*.tsv
+*.zip
+*.csv
+.idea/*
