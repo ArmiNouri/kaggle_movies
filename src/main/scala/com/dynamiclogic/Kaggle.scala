@@ -96,7 +96,7 @@ object KaggleComp extends App {
           val tf: Double = tk.count.toDouble / total_terms_in_doc.getOrElse(tk.number, 1)
           val idf: Double = scala.math.log1p(docs / tks.filter(t => t.token == tk.token).map(_.number).distinct.size)
           val tfidf: Double = tf * idf * 100000d
-          val r: String = s"'$dataset_id','${tk.token.getOrElse("").replace("'","&quot;")}','sentiment',${tk.number},${tk.count},$tfidf"
+          val r: String = s"'$dataset_id','${tk.token.getOrElse("")}','sentiment',${tk.number},${tk.count},$tfidf"
           appendToFile(outputfile, r)
         }
       }
@@ -116,6 +116,7 @@ object KaggleComp extends App {
     val f = new java.io.File(outputfile)
     val p = new java.io.PrintWriter(new java.io.FileOutputStream(f, false))
     val train_size: Double = Queries.get_train_size(table).toDouble
+    val heading: String = "sentiment,max_cat,phrase_id,token,sentiment_of_token,tfidf"
     val p_sents: Map[Int, Double] =
       (for {
         i <- 0 until cats
@@ -125,10 +126,11 @@ object KaggleComp extends App {
       }).toMap
     train_examples.foreach {
       e => {
+        var string: String = ""
         val tokens = e.phrase //the phrase has been replaced with its corresponding tokens in Queries.get_training_examples
         //val split_tokens = tokens.split("<\\^>|<~>").toList
         //val sifted_tokens = sift(split_tokens)
-        val split_tokens: List[String] = tokens.split(" ").toList.map(x => x.replace("'","&quot;"))
+        val split_tokens: List[String] = tokens.split(" ").toList
         val sifted_tokens: List[String] = sift(split_tokens)
         val phrase_tfidfs: List[TrainingTfidfRow] = Queries.get_tfidf(table, sifted_tokens).toList
         println(train_examples.indexOf(e))
@@ -141,20 +143,24 @@ object KaggleComp extends App {
                 t <- sifted_tokens
               } yield {
                 val token_found: Seq[TrainingTfidfRow] = phrase_tfidfs.filter(_.token.getOrElse("") == t)
-                val token_mean: Double = token_found.foldLeft(0d)(_ + _.tfidf.getOrElse(0d)) / token_found.size
-                val token_var: Double = token_found.map(x => scala.math.pow(x.tfidf.getOrElse(0d) - token_mean, 2)).foldLeft(0d)(_ + _) / token_found.size
+                //val token_mean: Double = token_found.foldLeft(0d)(_ + _.tfidf.getOrElse(0d)) / token_found.size
+                //val token_var: Double = token_found.map(x => scala.math.pow(x.tfidf.getOrElse(0d) - token_mean, 2)).foldLeft(0d)(_ + _) / token_found.size
                 val cat_found_in_token: Seq[TrainingTfidfRow] = token_found.filter(x => x.number == i)
-                val p_token: Double = (token_found.map(x => x.tfidf.getOrElse(0d)).sum) + 1d
-                val p_token_given_sentiment: Double = scala.math.log1p(cat_found_in_token.map(x => x.tfidf.getOrElse(0d) - token_mean).sum * cat_found_in_token.size + 1d)
-                p_token_given_sentiment /*/ p_token */
+                val p_token: Double = token_found.map(x => x.count * x.tfidf.getOrElse(0d)).sum + 1d
+                //give twice as much weight to bigrams as to unigrams
+                val bigramWeight: Double = if(t contains "<!!>") 2d else 1d
+                val p_token_given_sentiment: Double = scala.math.log1p(cat_found_in_token.map(x => x.count * x.tfidf.getOrElse(0d)).sum  + 1d) * bigramWeight
+                string += s"${e.phrase_id},$t,$i,${cat_found_in_token.map(x => x.count * x.tfidf.getOrElse(0d)).sum}\n"
+                p_token_given_sentiment /* * p_token*/
               }
-            (i, scala.math.pow(p_sents.getOrElse(i, 0d), 2d) * p_for_curr_cat.foldLeft(1d)(_ * _))
+            (i, scala.math.log1p(p_sents.getOrElse(i, 0d)) * p_for_curr_cat.foldLeft(1d)(_ * _))
           }
         val max_cat: Int = bayesian.maxBy(_._2)._1
 //        val r: String = s"${e.phrase_id},${max_cat}"
 //        appendToFile(outputfile, r)
         if(max_cat != e.sentiment) {
           val r: String = s"'$dataset_id',${e.phrase_id},'${e.phrase}',${e.sentiment},${max_cat}"
+          //val r: String = heading + s"${string.dropRight(1).split("\n").toList.map(x => s"${e.sentiment},${max_cat},$x").mkString("\n")}"
           appendToFile(outputfile, r)
         }
       }
