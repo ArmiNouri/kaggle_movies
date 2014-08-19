@@ -35,81 +35,6 @@ import edu.stanford.nlp.stats.ClassicCounter
 import edu.stanford.nlp.util.Pair
 
 
-object Globals {
-
-  val DB = scala.slick.jdbc.JdbcBackend.Database.forURL("jdbc:mysql://verveindex.cdd1o6al2jdl.us-east-1.rds.amazonaws.com/verveindex?characterEncoding=UTF-8", driver = "com.mysql.jdbc.Driver", user="maartenp", password="maartenp123")
-
-//  def printToFile(f: java.io.File, b: Boolean)(op: java.io.PrintWriter => Unit) {
-//    val p = new java.io.PrintWriter(new java.io.FileOutputStream(f, b))
-//    try { op(p) } finally { p.close() }
-//  }
-  def using[A <: {def close(): Unit}, B](param: A)(f: A => B): B =
-    try { f(param) } finally { param.close() }
-  def writeToFile(fileName:String, data:String) =
-    using (new FileWriter(fileName)) {
-      fileWriter => fileWriter.write(data)
-    }
-  def appendToFile(fileName:String, textData:String) =
-    using (new FileWriter(fileName, true)) {
-      fileWriter => using (new PrintWriter(fileWriter)) {
-        printWriter => printWriter.println(textData)
-      }
-    }
-//
-//  def sift(Tweet: List[String], foreign: Boolean = false): List[String] = {
-//    def untag(str: String): String = if(str.size >0 && (str.head == '#' || str.head == '@')) str.tail else str
-//    val unigrams: List[String] = Tweet.map( x => x.split("<:>") ).filter( x => (x.size > 1 && resolve(x(1), foreign) != "other") ).map ( x => untag(x(0).toLowerCase) )
-//
-//    unigrams :::
-//      (for { i <- 0 until unigrams.size
-//             head = unigrams(i)
-//             tail = unigrams.drop(i+1)
-//             g <- tail.map( t => head + "<!!>" + t)
-//      }
-//      yield {g}).toList
-//  }
-//
-//  def resolve(tag: String, foreign: Boolean): String = {
-//    if(List("VB", "VBD", "VBG", "VBN", "VBP", "VBZ") contains tag) "verb"
-//    else if(List("NN", "NNP", "NNS", "NNPS") contains tag) "noun"
-//    else if(List("JJ", "JJR", "JJS") contains tag) "adje"
-//    else if(List("RB", "RBR", "RBS", "WRB") contains tag) "adve"
-//    //TODO: expand your allowable POS tags
-//    else if(List("DT", "IN", "TO", "PRP","PRP$","WP","WP$", "$") contains tag) "allowable extras"
-//    //adding foreign language support
-//    else if(foreign && tag == "FW") "allowable foreign language content"
-//    else "other"
-//  }
-
-  def sift(tokens: List[String]): List[String] = {
-    val unigrams: List[String] = tokens
-    unigrams :::
-      (for {
-        i <- 0 until unigrams.size
-        head = unigrams(i)
-        tail = unigrams.drop(i+1)
-        g <- tail.map(t => head + "<!!>" + t)
-      } yield {
-        {g}
-      }).toList
-  }
-
-  lazy val table: String = "kaggle"
-  lazy val dataset_id: String = "rt"
-  lazy val group_size: Int = 50000
-  lazy val directory: String = "data/"
-  lazy val tokens_directory: String = "data/tokens/"
-  lazy val tfidfs_directory: String = "data/tfidfs/"
-  lazy val errors_directory: String = "data/errors/"
-  lazy val tokens_path: String = s"${tokens_directory}tokens"
-  lazy val tfidfs_path: String = s"${tfidfs_directory}tfidfs"
-  lazy val errors_path: String = s"${errors_directory}errors"
-  lazy val cats: Int = 5
-  lazy val docs: Double = cats.toDouble
-  lazy val limit: Int = 1000
-
-}
-
 
 object KaggleComp extends App {
 
@@ -216,20 +141,30 @@ object KaggleComp extends App {
                 t <- sifted_tokens
               } yield {
                 val token_found: Seq[TrainingTfidfRow] = phrase_tfidfs.filter(_.token.getOrElse("") == t)
+                val token_mean: Double = token_found.foldLeft(0d)(_ + _.tfidf.getOrElse(0d)) / token_found.size
+                val token_var: Double = token_found.map(x => scala.math.pow(x.tfidf.getOrElse(0d) - token_mean, 2)).foldLeft(0d)(_ + _) / token_found.size
                 val cat_found_in_token: Seq[TrainingTfidfRow] = token_found.filter(x => x.number == i)
-                val p_token: Double = token_found.map(x => x.tfidf.getOrElse(0d)).sum
-                val p_token_given_sentiment: Double = scala.math.log1p(cat_found_in_token.map(x => x.tfidf.getOrElse(0d)).sum * cat_found_in_token.size + 1d)
-                p_token_given_sentiment /*/ p_token*/
+                val p_token: Double = (token_found.map(x => x.tfidf.getOrElse(0d)).sum) + 1d
+                val p_token_given_sentiment: Double = scala.math.log1p(cat_found_in_token.map(x => x.tfidf.getOrElse(0d) - token_mean).sum * cat_found_in_token.size + 1d)
+                p_token_given_sentiment /*/ p_token */
               }
             (i, scala.math.pow(p_sents.getOrElse(i, 0d), 2d) * p_for_curr_cat.foldLeft(1d)(_ * _))
           }
         val max_cat: Int = bayesian.maxBy(_._2)._1
+//        val r: String = s"${e.phrase_id},${max_cat}"
+//        appendToFile(outputfile, r)
         if(max_cat != e.sentiment) {
           val r: String = s"'$dataset_id',${e.phrase_id},'${e.phrase}',${e.sentiment},${max_cat}"
           appendToFile(outputfile, r)
         }
       }
     }
+  }
+
+  def upload()(implicit s:PSession) = {
+    import Globals._
+    val outputFile: String = errors_path + ".csv"
+    Queries.update_results(table, outputFile)
   }
 
   override def main(args:Array[String]) {
@@ -241,6 +176,7 @@ object KaggleComp extends App {
         //calculate_counts()
         //calculate_tfidfs()
         validate()
+        //upload()
       }
     }
   }

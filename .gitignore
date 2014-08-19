@@ -6,3 +6,4 @@ target/*
 *.csv
 .idea/*
 data/*
+src/main/scala/com/dynamiclogic/Globals.scala

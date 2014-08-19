@@ -23,6 +23,7 @@ object Kaggle {
   def get_test_name(tb: String): String = tb + "_test"
   def get_tokens_name(tb: String): String = tb + "_tokens"
   def get_dataset_tweets_name(tb: String): String = tb + "_dataset_tweets"
+  def get_results_name(tb: String): String = tb + "_results"
 }
 
 case class TrainingTfidfRow(dataset_id: String, token: Option[String] = None, bucket: String, number: Int, count: Int, tfidf: Option[Double] = None)

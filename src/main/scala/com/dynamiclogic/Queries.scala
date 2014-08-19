@@ -58,6 +58,14 @@ object Queries {
     query_rs.map(r => Example(r._1, r._2, r._3, r._4))
   }
 
+  def get_testing_examples(tb: String)(implicit s:PSession): Seq[Example] = {
+    //val query: String = "SELECT tr.phrase_id, tr.sentence_id, tk.tokens, tr.sentiment FROM " + Kaggle.get_train_name(tb) + " tr INNER JOIN " + Kaggle.get_tokens_name(tb) + " tk ON (tr.phrase_id = tk.tweet_id) ORDER BY RAND() LIMIT " + limit
+    val query: String = "SELECT * FROM " + Kaggle.get_test_name(tb)
+    val query_rs: Seq[(Long, Long, String, Int)] = Q.queryNA[(Long, Long, String, Int)](query).list
+
+    query_rs.map(r => Example(r._1, r._2, r._3, r._4))
+  }
+
   def get_tokens(tb: String, phrase_id: Long)(implicit s:PSession): String = {
     (for { t <- Tokens(tb) if t.tweet_id === phrase_id } yield t.tokens).list.head
   }
@@ -78,5 +86,10 @@ object Queries {
 
   def get_train_size(tb: String)(implicit s:PSession): Int = {
     Kaggle.Train(tb).list.size
+  }
+
+  def update_results(tb: String, output: String)(implicit s:PSession) = {
+    val query: String = "LOAD DATA LOCAL INFILE '" + output + "' into table " + Kaggle.get_results_name(tb) + " fields terminated by ',' enclosed by '''' lines terminated by '\n' (phrase_id, sentiment)"
+    (Q.u + query).execute
   }
 }
